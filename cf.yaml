@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: This is a cloud formation file to create instances and establish acommunication between them.
+
+Parameters:
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t3.micro
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  KeyPairName:
+    Description: EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  # Creating VPC
+  StackVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Demo-VPC
+
+  # Creating Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Demo-IGW
+
+  # Attach Internet Gateway to VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref StackVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Creating Public and Private Subnets
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref StackVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: Demo-PublicSubnet
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref StackVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: Demo-PrivateSubnet
+
+  # Creating the Route Tables
+  PublicRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref StackVPC
+      Tags:
+        - Key: Name
+          Value: PublicRT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRT
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associate public subnet with the public route table
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRT
+
+  PrivateRT:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref  StackVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRT
+      
+
+  # Associate private subnets with the private route table
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRT
+
+  PublicEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allowing the Client to SSH into the Instance
+      VpcId: !Ref StackVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 86.45.42.227/32
+      Tags: 
+        - Key: Name
+          Value: Public-SecGrp
+
+  PrivateEC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allowing the to SSH into the Instance
+      VpcId: !Ref StackVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref PublicEC2SecurityGroup
+      Tags: 
+        - Key: Name
+          Value: Private-SecGrp
+
+  PublicEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0ea3c35c5c3284d82  
+      KeyName: !Ref KeyPairName  
+      SubnetId: !Ref PublicSubnet         
+      SecurityGroupIds:
+        - !Ref PublicEC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: MyPublic-EC2Instance
+
+  JumpBoxEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0ea3c35c5c3284d82  
+      KeyName: !Ref KeyPairName  
+      SubnetId: !Ref PublicSubnet         
+      SecurityGroupIds:
+        - !Ref PublicEC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: JumpBox-EC2Instance
+
+  PrivateEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0ea3c35c5c3284d82  
+      KeyName: !Ref KeyPairName      
+      SubnetId: !Ref PrivateSubnet     
+      SecurityGroupIds:
+        - !Ref PrivateEC2SecurityGroup
+      Tags:
+        - Key: Name
+          Value: Private-EC2Instance
+          
